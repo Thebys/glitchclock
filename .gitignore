@@ -1,0 +1,16 @@
+# ESPHome build artifacts
+.esphome/
+
+# Secrets (WiFi credentials etc.)
+secrets.yaml
+
+# Python virtual environment
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

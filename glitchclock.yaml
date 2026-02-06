@@ -1,0 +1,26 @@
+# GlitchClock - lokální konfigurace
+#
+# Tento soubor pulluje package z repo (nebo lokálně) a doplňuje secrets.
+# Pro HA remote deploy viz device.yaml.example.
+
+packages:
+  glitchclock: !include glitchclock-package.yaml
+
+esphome:
+  name: glitchclock
+  friendly_name: GlitchClock
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "GlitchClock Fallback"
+    password: !secret ap_password

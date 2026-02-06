@@ -1,0 +1,359 @@
+# ╔═══════════════════════════════════════════════════════════════╗
+# ║  GlitchClock - Package (public, no secrets)                 ║
+# ║  ESP8266 LOLIN V3 (NodeMCU V3)                              ║
+# ║  4 cifry × 7 segmentů × 2 LED + dvoutečka                  ║
+# ╚═══════════════════════════════════════════════════════════════╝
+#
+# Use this via packages: in your local device YAML.
+# See device.yaml.example for usage.
+#
+# Rozložení LED pásku (58 LED celkem):
+#   [Digit1: 0-13] [Digit2: 14-27] [Colon: 28-29] [Digit3: 30-43] [Digit4: 44-57]
+#
+# Segmenty v každé cifře (2 LED na segment, pořadí na pásku):
+#       _a_          g = LED 0,1
+#      |   |         e = LED 2,3
+#      f   b         d = LED 4,5
+#      |_g_|         c = LED 6,7
+#      |   |         b = LED 8,9
+#      e   c         a = LED 10,11
+#      |_d_|         f = LED 12,13
+
+substitutions:
+  # HW konfigurace - overrideable from device YAML
+  data_pin: GPIO2       # D4 na LOLIN V3 (UART1 TX - nutné pro neopixelbus)
+  num_leds: "58"        # 4×14 + 2 (colon)
+  leds_per_segment: "2"
+  colon_leds: "2"
+  # Offsety cifer v LED pásku (pásek jde zprava doleva)
+  digit1_offset: "44"
+  digit2_offset: "30"
+  colon_offset: "28"
+  digit3_offset: "14"
+  digit4_offset: "0"
+
+esphome:
+  includes:
+    - gc_core.h
+    - gc_glitch.h
+  on_boot:
+    priority: -100
+    then:
+      - light.turn_on:
+          id: clock_leds
+          effect: "GlitchClock"
+          brightness: 40%
+          red: 0%
+          green: 100%
+          blue: 0%
+
+esp8266:
+  board: nodemcuv2
+
+logger:
+  level: DEBUG
+
+captive_portal:
+
+web_server:
+  port: 80
+
+# Čas - SNTP jako primární zdroj, funguje i bez HA
+time:
+  - platform: sntp
+    id: clock_time
+    timezone: Europe/Prague
+    servers:
+      - 0.cz.pool.ntp.org
+      - 1.cz.pool.ntp.org
+      - pool.ntp.org
+
+# ── WiFi signal → glitch rate boost ───────────────────────────
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    id: wifi_signal_db
+    update_interval: 30s
+    entity_category: diagnostic
+    on_value:
+      - globals.set:
+          id: wifi_rssi
+          value: !lambda 'return x;'
+
+# ── Tunable parameters ─────────────────────────────────────────
+globals:
+  - id: glitch_rate
+    type: float
+    initial_value: '0.5'
+  - id: corruption
+    type: float
+    initial_value: '0.3'
+  - id: drift
+    type: float
+    initial_value: '0.5'
+  - id: color_mode
+    type: int
+    initial_value: '0'
+  - id: wifi_rssi
+    type: float
+    initial_value: '0.0'
+  - id: demo_mode
+    type: bool
+    initial_value: 'false'
+
+number:
+  - platform: template
+    name: "Glitch Rate"
+    id: glitch_rate_ctrl
+    icon: "mdi:flash-alert"
+    entity_category: config
+    min_value: 0.0
+    max_value: 2.0
+    step: 0.05
+    initial_value: 0.5
+    restore_value: true
+    optimistic: true
+    set_action:
+      - globals.set:
+          id: glitch_rate
+          value: !lambda 'return x;'
+
+  - platform: template
+    name: "Corruption"
+    id: corruption_ctrl
+    icon: "mdi:skull-crossbones"
+    entity_category: config
+    min_value: 0.0
+    max_value: 2.0
+    step: 0.05
+    initial_value: 0.3
+    restore_value: true
+    optimistic: true
+    set_action:
+      - globals.set:
+          id: corruption
+          value: !lambda 'return x;'
+
+  - platform: template
+    name: "Drift"
+    id: drift_ctrl
+    icon: "mdi:timer-sand"
+    entity_category: config
+    min_value: 0.0
+    max_value: 2.0
+    step: 0.05
+    initial_value: 0.5
+    restore_value: true
+    optimistic: true
+    set_action:
+      - globals.set:
+          id: drift
+          value: !lambda 'return x;'
+
+select:
+  - platform: template
+    name: "Color Mode"
+    id: color_mode_ctrl
+    icon: "mdi:palette"
+    entity_category: config
+    options:
+      - "Normal"
+      - "Shift"
+    initial_option: "Normal"
+    restore_value: true
+    optimistic: true
+    set_action:
+      - lambda: |-
+          id(color_mode) = (x == "Shift") ? 1 : 0;
+
+switch:
+  - platform: template
+    name: "Demo Mode"
+    id: demo_mode_ctrl
+    icon: "mdi:play-circle-outline"
+    entity_category: config
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    turn_on_action:
+      - globals.set:
+          id: demo_mode
+          value: 'true'
+    turn_off_action:
+      - globals.set:
+          id: demo_mode
+          value: 'false'
+
+# WS2812 LED pásek (neopixelbus s HW UART - spolehlivé i s WiFi)
+light:
+  - platform: neopixelbus
+    variant: WS2812X
+    pin: ${data_pin}
+    num_leds: ${num_leds}
+    type: GRB
+    name: "Display"
+    id: clock_leds
+    method:
+      type: ESP8266_UART
+    default_transition_length: 0s
+    effects:
+      # ── Clock: normální, nudný, spolehlivý ──
+      - addressable_lambda:
+          name: "Clock"
+          update_interval: 500ms
+          lambda: |-
+            using namespace gc;
+            static const int LPS = ${leds_per_segment};
+            static int OFFSETS[] = {${digit1_offset}, ${digit2_offset}, ${digit3_offset}, ${digit4_offset}};
+            static MorphState morph;
+
+            auto t = id(clock_time).now();
+            it.all() = Color(0, 0, 0);
+
+            if (!t.is_valid()) {
+              static bool blink = false;
+              blink = !blink;
+              if (blink) render_colon(it, ${colon_offset}, ${colon_leds}, current_color);
+              return;
+            }
+
+            int v[] = {t.hour / 10, t.hour % 10, t.minute / 10, t.minute % 10};
+            for (int d = 0; d < 4; d++)
+              render_digit(it, OFFSETS[d], v[d], LPS, current_color);
+            morph.update(v);
+            morph.render(it, OFFSETS, v, LPS, current_color);
+            if (t.second % 2 == 0)
+              render_colon(it, ${colon_offset}, ${colon_leds}, current_color);
+
+      # ── GlitchClock: chaos, glitch, hack the planet ──
+      - addressable_lambda:
+          name: "GlitchClock"
+          update_interval: 500ms
+          lambda: |-
+            using namespace gc;
+            static const int LPS = ${leds_per_segment};
+            static int OFFSETS[] = {${digit1_offset}, ${digit2_offset}, ${digit3_offset}, ${digit4_offset}};
+            static GlitchState glitch;
+            static MorphState morph;
+
+            // WiFi RSSI → glitch rate boost (kicks in below -50dBm)
+            float rssi = id(wifi_rssi);
+            float rssi_boost = rssi < -50.0f ? (-50.0f - rssi) / 50.0f : 0.0f;
+            if (rssi_boost > 1.0f) rssi_boost = 1.0f;
+            float effective_rate = id(glitch_rate) + rssi_boost;
+
+            // Demo mode: sync flag, force shift for drift phase
+            bool in_demo = id(demo_mode);
+            uint8_t cm = (uint8_t)id(color_mode);
+            if (in_demo && glitch.demo_phase == 11) cm = 1;  // force shift for drift demo
+
+            glitch.set_params({effective_rate, id(corruption), id(drift), cm});
+            auto base = current_color;
+
+            // Demo mode: manage lifecycle
+            if (in_demo && !glitch.demo) {
+              glitch.demo = true;
+              glitch.demo_enter_phase(0);
+            } else if (!in_demo && glitch.demo) {
+              glitch.demo = false;
+              glitch.effect = gc::GlitchState::NONE;
+              glitch.ticks = 0;
+            }
+
+            auto t = id(clock_time).now();
+            it.all() = Color(0, 0, 0);
+
+            if (!t.is_valid()) {
+              if (chance(50)) render_colon(it, ${colon_offset}, ${colon_leds}, base);
+              if (chance(10)) {
+                int d = rng(4);
+                render_digit(it, OFFSETS[d], rng(10), LPS, shift_color(base));
+              }
+              return;
+            }
+
+            glitch.tick(t.hour, t.minute);
+
+            // Loading/scramble přebírají celý displej
+            if (glitch.render_override(it, OFFSETS, LPS, ${colon_offset}, ${colon_leds}, base))
+              return;
+
+            // Připravit cifry (s možným time warpem)
+            int v[] = {t.hour / 10, t.hour % 10, t.minute / 10, t.minute % 10};
+            glitch.apply_time(v);
+
+            // Decay masky (omezují které segmenty se vykreslí)
+            uint8_t masks[4];
+            glitch.get_masks(masks);
+
+            // Vykreslit cifry s maskami + speciální palety
+            uint8_t dp = glitch.demo_palette();
+            bool haze = dp == 2 || glitch.is_420;
+            bool rainbow = !haze && (dp == 1 || is_special_time(v));
+
+            // 420 breathing: slow sine pulse (~4s period)
+            uint8_t breath_br = 255;
+            if (haze) {
+              float phase = (float)(millis() % 4000) / 4000.0f * 6.2832f;
+              breath_br = 160 + (uint8_t)(47.5f * (1.0f + sinf(phase)));
+            }
+
+            if (haze) {
+              for (int d = 0; d < 4; d++)
+                render_digit_haze(it, OFFSETS[d], v[d] % 10, LPS, masks[d], breath_br);
+              // Dvoutečka: slow fade amber
+              render_colon(it, ${colon_offset}, ${colon_leds}, dim(haze_stripe(3), breath_br));
+            } else if (rainbow) {
+              for (int d = 0; d < 4; d++)
+                render_digit_pride(it, OFFSETS[d], v[d] % 10, LPS, masks[d]);
+              // Dvoutečka v pastelové barvě (mint shimmer)
+              render_colon(it, ${colon_offset}, ${colon_leds}, pastel_stripe(3));
+            } else {
+              for (int d = 0; d < 4; d++)
+                render_digit_masked(it, OFFSETS[d], v[d] % 10, LPS, base, masks[d]);
+            }
+
+            // Digit morph transitions
+            esphome::Color morph_c = haze ? dim(haze_stripe(1), breath_br)
+                                    : (rainbow ? pastel_stripe(3) : base);
+            morph.update(v);
+            morph.render(it, OFFSETS, v, LPS, morph_c);
+
+            // Minor segment glitche
+            glitch.apply_segments(it, OFFSETS, LPS, base);
+
+            // Artefact scanline sweep
+            glitch.apply_artefact(it, OFFSETS, LPS, ${colon_offset}, ${colon_leds}, base);
+
+            // Dvoutečka (haze has its own slow colon above)
+            if (!haze)
+              glitch.apply_colon(it, ${colon_offset}, ${colon_leds}, t.second, base);
+
+            // Per-LED color drift (Shift mode)
+            glitch.apply_color_drift(it, ${num_leds}, base);
+
+      # ── Loading: spinner kolem segmentů ──
+      - addressable_lambda:
+          name: "Loading"
+          update_interval: 80ms
+          lambda: |-
+            using namespace gc;
+            static const int LPS = ${leds_per_segment};
+            static int OFFSETS[] = {${digit1_offset}, ${digit2_offset}, ${digit3_offset}, ${digit4_offset}};
+            static int pos = 0;
+            pos = (pos + 1) % 6;
+
+            it.all() = Color(0, 0, 0);
+
+            // Spinner s tail efektem na všech cifrách
+            for (int d = 0; d < 4; d++) {
+              for (int t = 0; t < 3; t++) {
+                int idx = (pos - t + 6) % 6;
+                uint8_t br = 255 >> t;  // 255, 127, 63
+                set_seg(it, OFFSETS[d], SPIN[idx], LPS, dim(current_color, br));
+              }
+            }
+
+            // Pulsující dvoutečka
+            uint8_t phase = (millis() / 8) % 255;
+            uint8_t pulse = phase < 128 ? phase * 2 : (255 - phase) * 2;
+            render_colon(it, ${colon_offset}, ${colon_leds}, dim(current_color, pulse));
