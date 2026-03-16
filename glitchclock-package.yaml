@@ -32,10 +32,9 @@ substitutions:
   digit3_offset: "14"
   digit4_offset: "0"
 
+glitchclock:
+
 esphome:
-  includes:
-    - gc_core.h
-    - gc_glitch.h
   on_boot:
     priority: -100
     then:

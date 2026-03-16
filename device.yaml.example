@@ -1,17 +1,24 @@
 # GlitchClock - Home Assistant remote device config
 #
-# Umísti tento soubor do ESPHome config adresáře v HA
-# (typicky /config/esphome/glitchclock.yaml) a vyplň secrets.
+# Umisti tento soubor do ESPHome config adresare v HA
+# (typicky /config/esphome/glitchclock.yaml) a vypln secrets.
 #
-# Firmware se stahuje z GitHubu a kompiluje přímo v HA.
-# Pro aktualizaci: změň ref na nový tag/commit, klikni Install.
+# Firmware se stahuje z GitHubu a kompiluje primo v HA.
+# Pro aktualizaci: zmen ref na novy tag/commit, klikni Install.
 
 packages:
   glitchclock:
     url: https://github.com/Thebys/glitchclock
-    files: [glitchclock-package.yaml]
+    files:
+      - glitchclock-package.yaml
     ref: master
-    refresh: 0s  # fetch only on manual install, not automatically
+    refresh: 0s
+
+external_components:
+  - source: github://Thebys/glitchclock
+    components:
+      - glitchclock
+    refresh: 0s
 
 esphome:
   name: glitchclock
@@ -32,7 +39,7 @@ wifi:
     ssid: "GlitchClock Fallback"
     password: !secret glitchclock_ap_password
 
-# Příklad HA secrets.yaml řádků:
+# Priklad HA secrets.yaml radku:
 # glitchclock_api_key: "vygeneruj-base64-klic"
 # glitchclock_ota_password: "vygeneruj-hex-heslo"
 # glitchclock_ap_password: "vygeneruj-heslo"

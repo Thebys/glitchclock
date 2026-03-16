@@ -1,6 +1,8 @@
 // GlitchClock - stateless rendering & data tables
 #pragma once
 #include <cstdint>
+#include "esphome/core/color.h"
+#include "esphome/components/light/addressable_light.h"
 
 namespace gc {
 

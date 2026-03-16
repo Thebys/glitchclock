@@ -10,6 +10,11 @@ esphome:
   name: glitchclock
   friendly_name: GlitchClock
 
+# Override external_components to use local source for development
+external_components:
+  - source: components
+    components: [glitchclock]
+
 api:
   encryption:
     key: !secret api_encryption_key
