@@ -41,7 +41,7 @@ esphome:
       - light.turn_on:
           id: clock_leds
           effect: "GlitchClock"
-          brightness: 40%
+          brightness: 60%
           red: 0%
           green: 100%
           blue: 0%
@@ -67,6 +67,14 @@ time:
       - 1.cz.pool.ntp.org
       - pool.ntp.org
 
+# ── WiFi info ────────────────────────────────────────────────
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+      id: wifi_ip
+      entity_category: diagnostic
+
 # ── WiFi signal → glitch rate boost ───────────────────────────
 sensor:
   - platform: wifi_signal
@@ -78,6 +86,8 @@ sensor:
       - globals.set:
           id: wifi_rssi
           value: !lambda 'return x;'
+      - lambda: |-
+          ESP_LOGI("net", "IP: %s  RSSI: %.0f dBm", id(wifi_ip).state.c_str(), x);
 
 # ── Tunable parameters ─────────────────────────────────────────
 globals:
@@ -194,6 +204,19 @@ light:
     method:
       type: ESP8266_UART
     default_transition_length: 0s
+    # Při zapnutí (např. velkým "open switchem" v HA) ESPHome obnoví poslední
+    # uložený efekt. Loading/None ale nedávají smysl jako default → přepneme na
+    # GlitchClock. Ruční volba Clock/GlitchClock z HA zůstane zachována.
+    on_turn_on:
+      - if:
+          condition:
+            lambda: |-
+              auto e = id(clock_leds)->get_effect_name();
+              return e == "Loading" || e == "None" || e.empty();
+          then:
+            - light.turn_on:
+                id: clock_leds
+                effect: "GlitchClock"
     effects:
       # ── Clock: normální, nudný, spolehlivý ──
       - addressable_lambda:
